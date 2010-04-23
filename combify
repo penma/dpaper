@@ -1,0 +1,51 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+use MIME::Base64;
+use IPC::Run qw(run);
+use PostScript::Simple;
+
+my $pss = PostScript::Simple->new(papersize => "A4", colour => 1, eps => 0, units => "cm");
+
+$pss->newpage();
+
+$pss->setfont("OCRA", 4);
+
+local $/ = \30;
+my $data_fileid = "stdin"; # XXX
+my $data_offset = 0; # XXX
+my ($data_total, $data_lines) = (0, 0);
+while (<>) {
+	print "doing stuff $data_lines\n";
+
+	my $code = sprintf("%02x:%s\n", $data_lines, encode_base64($_, ""));
+	my $eps;
+	run [qw(barcode -e code128 -n -E -u cm -g 18x0.3)], \$code, \$eps;
+
+	my $e = PostScript::Simple::EPS->new(source => $eps);
+	$e->scale(18/$e->width);
+	$e->scale(1, 0.5);
+	$pss->importeps($e, 2, 27-(($data_lines+1)/6.5));
+	$pss->text(2-0.25, 27+0.03-($data_lines/6.5), sprintf("%02x", $data_lines));
+
+	$data_total += length($_);
+	$data_lines++;
+}
+
+# generate the header
+my $header_x = 1.25;
+foreach my $code ("LC$data_lines", "OS$data_offset", "DT$data_total", "FI$data_fileid") {
+	my $eps;
+	run [qw(barcode -e code128 -n -E -u cm -g 4.5x0.75)], \$code, \$eps;
+	my $o = PostScript::Simple::EPS->new(source => $eps);
+	$o->scale(4.5/$o->width);
+	$pss->importeps($o, $header_x, 29.7 - 1 - 1);
+	$header_x += 4.5;
+}
+
+$pss->setfont("OCRA", 10);
+$pss->text(1, 29.7 - 1 - 1 - 0.25, "PP file $data_fileid, $data_lines lines, offset $data_offset, $data_total bytes on page.");
+
+$pss->output("output.ps");
+
