@@ -59,6 +59,8 @@ sub read_image {
 	$data{data} = join("", @f_d);
 	delete($data{data_indices});
 
+	$data{data} = substr($data{data}, 0, $data{length});
+
 	return \%data;
 }
 
