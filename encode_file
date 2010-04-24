@@ -1,0 +1,27 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+use Getopt::Long qw(:config no_ignore_case bundling);
+use Algorithm::FEC;
+use IPC::Run qw(run);
+
+my $c_fileid = "stdin";
+GetOptions("fileid|I=s" => \$c_fileid) or die;
+
+my ($c_offset, $c_doc) = (0, 0);
+while (read(STDIN, my $c_data, 30*128)) {
+	my $fec = Algorithm::FEC->new(128, 160, 30);
+	my @l = unpack("(a30)*", $c_data);
+	$l[-1] = pack("a30", $l[-1]); # pad last block
+	push(@l, "\0" x 30) until (@l == 128);
+	$fec->set_encode_blocks(\@l);
+	my $d = join("", map { $fec->encode($_) } 0..159);
+	run
+		["combify", "--offset", $c_offset, "--fileid", $c_fileid],
+		"<", \$d,
+		">", "pp-$c_fileid-$c_doc.ps";
+	$c_offset += length($c_data);
+	$c_doc++;
+}
+

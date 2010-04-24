@@ -1,0 +1,46 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+use Getopt::Long qw(:config no_ignore_case bundling);
+use Algorithm::FEC;
+use IPC::Run qw(run);
+use MIME::Base64;
+
+sub read_image {
+	my ($filename) = @_;
+	my %data;
+
+	my $codes;
+	run ["zbarimg", "--raw", "--", $filename], ">", \$codes;
+
+	foreach my $code (split(/\n/, $codes)) {
+		if ($code =~ /^FI(.+)$/) {
+			$data{fileid} = $1;
+		} elsif ($code =~ /^(DT|OS|LC)([0-9a-f]+)$/) {
+			$data{{DT => "data_total", OS => "offset", LC => "line_count"}->{$1}} = oct("0x$2");
+		} elsif ($code =~ /^([0-9a-f]+):([A-Za-z0-9+\/=]{1,40})$/) {
+			push(@{$data{data_indices}}, oct("0x$1"));
+			push(@{$data{data}}        , decode_base64($2));
+		} else {
+			warn("Ignoring unknown barcode input \"$code\"");
+		}
+	}
+
+	if (@{$data{data}} < 128) {
+		die("Could only retrieve " . scalar(@{$data{data}}) . " data lines from image \"$filename\" - need at least 128");
+	}
+
+	my $fec = Algorithm::FEC->new(128, 160, 30);
+	my @f_d = @{$data{data}}[0..127];
+	my @f_i = @{$data{data_indices}}[0..127];
+	$fec->set_decode_blocks(\@f_d, \@f_i);
+	$fec->decode();
+
+	$data{data} = join("", @f_d);
+	delete($data{data_indices});
+
+	return \%data;
+}
+
+print read_image($ARGV[0])->{data};
