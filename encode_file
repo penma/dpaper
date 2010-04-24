@@ -18,7 +18,7 @@ while (read(STDIN, my $c_data, 30*128)) {
 	$fec->set_encode_blocks(\@l);
 	my $d = join("", map { $fec->encode($_) } 0..159);
 	run
-		["combify", "--offset", $c_offset, "--fileid", $c_fileid],
+		["combify", "--offset", $c_offset, "--fileid", $c_fileid, "--length", length($c_data)],
 		"<", \$d,
 		">", "pp-$c_fileid-$c_doc.ps";
 	$c_offset += length($c_data);
