@@ -9,11 +9,13 @@ use MIME::Base64;
 use Number::Range;
 
 sub read_image {
-	my ($filename) = @_;
+	my %args = @_;
 	my %data;
 
 	my $codes;
-	run ["zbarimg", "--raw", "--", $filename], ">", \$codes;
+	run
+		["convert", @{$args{convert_options}}, $args{filename}, "pnm:-"],
+		"|", ["zbarimg", "--raw", "--", "-"], ">", \$codes;
 
 	foreach my $code (split(/\n/, $codes)) {
 		if ($code =~ /^FI(.+)$/) {
@@ -47,7 +49,7 @@ sub read_image {
 	delete($data{deleted_blocks});
 
 	if (@{$data{data}} < 128) {
-		die("Could only retrieve " . scalar(@{$data{data}}) . " data lines from image \"$filename\" - need at least 128");
+		die("Could only retrieve " . scalar(@{$data{data}}) . " data lines from image \"$args{filename}\" - need at least 128");
 	}
 
 	my $fec = Algorithm::FEC->new(128, 160, 30);
@@ -64,4 +66,9 @@ sub read_image {
 	return \%data;
 }
 
-print read_image($ARGV[0])->{data};
+my %params = (
+	filename => $ARGV[0],
+	convert_options => ["-threshold", "75%"],
+);
+
+print read_image(%params)->{data};
