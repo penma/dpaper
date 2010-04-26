@@ -68,8 +68,8 @@ sub read_image {
 	}
 	delete($data{deleted_blocks});
 
-	if (@{$data{data}} < 256) {
-		die("Could only retrieve " . scalar(@{$data{data}}) . " data lines from image \"$args{filename}\" - need at least 256");
+	if (@{$data{data} || []} < 256) {
+		die("Could only retrieve " . scalar(@{$data{data} || []}) . " data lines from image \"$args{filename}\" - need at least 256");
 	}
 
 	my $fec = Algorithm::FEC->new(256, 320, $BS);
