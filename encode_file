@@ -5,11 +5,13 @@ use warnings;
 use Getopt::Long qw(:config no_ignore_case bundling);
 use Algorithm::FEC;
 use IPC::Run qw(run);
+use DPaper::Encoder;
 
 my $c_fileid = "stdin";
 GetOptions("fileid|I=s" => \$c_fileid) or die;
 
-my ($c_offset, $c_doc) = (0, 0);
+my $encoder = DPaper::Encoder->new(fileid => $c_fileid);
+
 while (read(STDIN, my $c_data, 30*128)) {
 	my $fec = Algorithm::FEC->new(128, 160, 30);
 	my @l = unpack("(a30)*", $c_data);
@@ -17,11 +19,8 @@ while (read(STDIN, my $c_data, 30*128)) {
 	push(@l, "\0" x 30) until (@l == 128);
 	$fec->set_encode_blocks(\@l);
 	my $d = join("", map { $fec->encode($_) } 0..159);
-	run
-		["combify", "--offset", $c_offset, "--fileid", $c_fileid, "--length", length($c_data)],
-		"<", \$d,
-		">", "pp-$c_fileid-$c_doc.ps";
-	$c_offset += length($c_data);
-	$c_doc++;
+	$encoder->writepage(data => $d, length => length($c_data));
 }
 
+open(my $out, ">", "output.ps");
+print $out $encoder->get();

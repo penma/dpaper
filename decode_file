@@ -15,7 +15,7 @@ sub read_image {
 	my $codes;
 	run
 		["convert", @{$args{convert_options}}, $args{filename}, "pnm:-"],
-		"|", ["zbarimg", "--raw", "--", "-"], ">", \$codes;
+		"|", ["zbarimg", "--quiet", "--raw", "--", "-"], ">", \$codes;
 
 	foreach my $code (split(/\n/, $codes)) {
 		if ($code =~ /^FI(.+)$/) {
@@ -39,7 +39,7 @@ sub read_image {
 			push(@{$data{data_indices}}, oct("0x$1"));
 			push(@{$data{data}}        , decode_base64($2));
 		} else {
-			warn("Ignoring unknown barcode input \"$code\"");
+			# warn("Ignoring unknown barcode input \"$code\"");
 		}
 	}
 
@@ -68,7 +68,29 @@ sub read_image {
 
 my %params = (
 	filename => $ARGV[0],
-	convert_options => ["-threshold", "75%"],
 );
 
-print read_image(%params)->{data};
+foreach my $co (
+	["-contrast-stretch", "35%x30%"],
+	["-contrast-stretch", "30%x40%"],
+	["-contrast-stretch", "25%x50%"],
+	["-contrast-stretch", "20%x60%"],
+	["-contrast-stretch", "20%x70%"],
+	["-threshold", "75%"]
+) {
+	$params{convert_options} = $co;
+	eval {
+		print read_image(%params)->{data};
+	};
+	if ($@) {
+		if ($@ !~ /^(?:Required header field|Could only retrieve)/) {
+			die($@);
+		} else {
+			warn("[@{$co}] $@");
+		}
+	} else {
+		last;
+	}
+}
+
+
