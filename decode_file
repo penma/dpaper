@@ -114,8 +114,9 @@ if ($image_data{fileid} =~ /([^A-Za-z0-9\-_.])/) {
 	die("file identifier \"$image_data{fileid}\" contains unsafe character $1");
 }
 
-my $outfile = IO::File->new($options{filename_prefix} . $image_data{fileid}, O_WRONLY | O_CREAT)
-	or die("unable to open output file $options{filename_prefix}$image_data{fileid}: $!");
+my $filename = $options{filename_prefix} . $image_data{fileid};
+my $outfile = IO::File->new($filename, O_WRONLY | O_CREAT)
+	or die("unable to open output $filename: $!");
 seek($outfile, $image_data{offset}, 0);
 print $outfile $image_data{data};
 
