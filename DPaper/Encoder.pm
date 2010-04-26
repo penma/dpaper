@@ -27,7 +27,7 @@ sub new {
 sub writepage {
 	my ($self, %args) = @_;
 	my $data = $args{data};
-	my $offset = $args{offset}// $self->{offset};
+	my $offset = $args{offset} // $self->{offset};
 	my $datalen = $args{length};
 
 	print "encoder: writepage $offset\n";
@@ -90,7 +90,7 @@ sub writepage {
 	$self->{pss}->setfont("OCRA", 10);
 	$self->{pss}->text(1, 1.5, "DPaper fid:$self->{fileid} off:$offset rawlen:$datalen");
 
-	$self->{offset} = $offset + length($data);
+	$self->{offset} = $offset + $datalen;
 }
 
 sub get {
