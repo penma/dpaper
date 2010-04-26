@@ -7,6 +7,7 @@ use Algorithm::FEC;
 use IPC::Run qw(run);
 use MIME::Base64;
 use Number::Range;
+use IO::File;
 
 sub read_image {
 	my %args = @_;
@@ -23,7 +24,11 @@ sub read_image {
 			$data{fileid} = $1;
 		} elsif ($code =~ /^(OS|LE)([0-9a-f]+)$/) {
 			# offset/length
-			$data{{OS => "offset", LE => "length"}->{$1}} = oct("0x$2");
+			my $f = {OS => "offset", LE => "length"}->{$1};
+			if (defined($data{$f})) {
+				die("Tried to set \"$f\" field twice");
+			}
+			$data{$f} = oct("0x$2");
 		} elsif ($code =~ /^DBNONE\s*$/) {
 			# no deleted blocks
 			$data{deleted_blocks} = 1;
@@ -63,34 +68,54 @@ sub read_image {
 
 	$data{data} = substr($data{data}, 0, $data{length});
 
-	return \%data;
+	return %data;
 }
 
-my %params = (
-	filename => $ARGV[0],
+sub try_read_image {
+	my ($filename) = @_;
+	my %data;
+
+	foreach my $co (
+		["-contrast-stretch", "35%x30%"],
+		["-contrast-stretch", "30%x40%"],
+		["-contrast-stretch", "25%x50%"],
+		["-contrast-stretch", "20%x60%"],
+		["-contrast-stretch", "20%x70%"],
+		["-threshold", "75%"]
+	) {
+		eval {
+			%data = read_image(filename => $filename, convert_options => $co);
+		};
+		if ($@) {
+			if ($@ =~ /^(?:Required header field|Could only retrieve)/) {
+				warn("[@{$co}] $@");
+			} else {
+				die($@);
+			}
+		} else {
+			return %data;
+		}
+	}
+
+	return ();
+}
+
+my %options = (
+	filename_prefix => "dp_",
 );
 
-foreach my $co (
-	["-contrast-stretch", "35%x30%"],
-	["-contrast-stretch", "30%x40%"],
-	["-contrast-stretch", "25%x50%"],
-	["-contrast-stretch", "20%x60%"],
-	["-contrast-stretch", "20%x70%"],
-	["-threshold", "75%"]
-) {
-	$params{convert_options} = $co;
-	eval {
-		print read_image(%params)->{data};
-	};
-	if ($@) {
-		if ($@ !~ /^(?:Required header field|Could only retrieve)/) {
-			die($@);
-		} else {
-			warn("[@{$co}] $@");
-		}
-	} else {
-		last;
-	}
+GetOptions(\%options,
+	"filename_prefix|filename-prefix=s",
+);
+
+my %image_data = try_read_image($ARGV[0]) or die("unable to get any usable data from $ARGV[0]");
+
+if ($image_data{fileid} =~ /([^A-Za-z0-9\-_.])/) {
+	die("file identifier \"$image_data{fileid}\" contains unsafe character $1");
 }
 
+my $outfile = IO::File->new($options{filename_prefix} . $image_data{fileid}, O_WRONLY | O_CREAT)
+	or die("unable to open output file $options{filename_prefix}$image_data{fileid}: $!");
+seek($outfile, $image_data{offset}, 0);
+print $outfile $image_data{data};
 
