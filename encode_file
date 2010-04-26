@@ -2,6 +2,10 @@
 use strict;
 use warnings;
 
+use Readonly;
+
+Readonly::Scalar my $BS => 16;
+
 use Getopt::Long qw(:config no_ignore_case bundling);
 use Algorithm::FEC;
 use IPC::Run qw(run);
@@ -12,13 +16,13 @@ GetOptions("fileid|I=s" => \$c_fileid) or die;
 
 my $encoder = DPaper::Encoder->new(fileid => $c_fileid);
 
-while (read(STDIN, my $c_data, 30*128)) {
-	my $fec = Algorithm::FEC->new(128, 160, 30);
-	my @l = unpack("(a30)*", $c_data);
-	$l[-1] = pack("a30", $l[-1]); # pad last block
-	push(@l, "\0" x 30) until (@l == 128);
+while (read(STDIN, my $c_data, 256*$BS)) {
+	my $fec = Algorithm::FEC->new(256, 320, $BS);
+	my @l = unpack("(a$BS)*", $c_data);
+	$l[-1] = pack("a$BS", $l[-1]); # pad last block
+	push(@l, "\0" x $BS) until (@l == 256);
 	$fec->set_encode_blocks(\@l);
-	my $d = join("", map { $fec->encode($_) } 0..159);
+	my $d = join("", map { $fec->encode($_) } 0..319);
 	$encoder->writepage(data => $d, length => length($c_data));
 }
 

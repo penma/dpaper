@@ -2,23 +2,36 @@
 use strict;
 use warnings;
 
+use Readonly;
+
+Readonly::Scalar my $BS => 16;
+
 use Getopt::Long qw(:config no_ignore_case bundling);
 use Algorithm::FEC;
 use IPC::Run qw(run);
 use MIME::Base64;
 use Number::Range;
 use IO::File;
+use List::MoreUtils qw(uniq);
+use Image::Size;
 
 sub read_image {
 	my %args = @_;
 	my %data;
 
 	my $codes;
-	run
-		["convert", @{$args{convert_options}}, $args{filename}, "pnm:-"],
-		"|", ["zbarimg", "--quiet", "--raw", "--", "-"], ">", \$codes;
+	my (undef, $img_height) = imgsize($args{filename});
+	my $crop_h = int($img_height / 3.5);
+	foreach my $off_y (map { int($_ * $img_height / 4) } 0..3) {
+		my $codes_new;
+		run
+			["convert", @{$args{convert_options}}, "-crop", "100%x$crop_h+0+$off_y", "+repage", $args{filename}, "pnm:-"],
+			"|", ["zbarimg", "--quiet", "--raw", "--", "-"], ">", \$codes_new;
+		$codes .= $codes_new;
+	}
+	my @codes = uniq sort split(/\n/, $codes);
 
-	foreach my $code (split(/\n/, $codes)) {
+	foreach my $code (@codes) {
 		if ($code =~ /^FI(.+)$/) {
 			# fileid
 			$data{fileid} = $1;
@@ -36,13 +49,15 @@ sub read_image {
 			# deleted blocks, fill them with null bytes.
 			foreach my $bid (Number::Range->new($1)->range()) {
 				push(@{$data{data_indices}}, $bid);
-				push(@{$data{data}}        , "\0" x 30);
+				push(@{$data{data}}        , "\0" x $BS);
 			}
 			$data{deleted_blocks} = 1;
 		} elsif ($code =~ /^([0-9a-f]+):([A-Za-z0-9+\/=]{1,40})$/) {
 			# data
-			push(@{$data{data_indices}}, oct("0x$1"));
-			push(@{$data{data}}        , decode_base64($2));
+			my ($off, $b64) = ($1, $2);
+			$b64 .= "=" until (length($b64) % 4 == 0);
+			push(@{$data{data_indices}}, oct("0x$off"));
+			push(@{$data{data}}        , decode_base64($b64));
 		} else {
 			# warn("Ignoring unknown barcode input \"$code\"");
 		}
@@ -53,13 +68,13 @@ sub read_image {
 	}
 	delete($data{deleted_blocks});
 
-	if (@{$data{data}} < 128) {
-		die("Could only retrieve " . scalar(@{$data{data}}) . " data lines from image \"$args{filename}\" - need at least 128");
+	if (@{$data{data}} < 256) {
+		die("Could only retrieve " . scalar(@{$data{data}}) . " data lines from image \"$args{filename}\" - need at least 256");
 	}
 
-	my $fec = Algorithm::FEC->new(128, 160, 30);
-	my @f_d = @{$data{data}}[0..127];
-	my @f_i = @{$data{data_indices}}[0..127];
+	my $fec = Algorithm::FEC->new(256, 320, $BS);
+	my @f_d = @{$data{data}}[0..255];
+	my @f_i = @{$data{data_indices}}[0..255];
 	$fec->set_decode_blocks(\@f_d, \@f_i);
 	$fec->decode();
 
@@ -81,7 +96,8 @@ sub try_read_image {
 		["-contrast-stretch", "25%x50%"],
 		["-contrast-stretch", "20%x60%"],
 		["-contrast-stretch", "20%x70%"],
-		["-threshold", "75%"]
+		["-threshold", "75%"],
+		[],
 	) {
 		eval {
 			%data = read_image(filename => $filename, convert_options => $co);
@@ -109,6 +125,7 @@ GetOptions(\%options,
 );
 
 my %image_data = try_read_image($ARGV[0]) or die("unable to get any usable data from $ARGV[0]");
+print STDERR "retrieved data from image!\n";
 
 if ($image_data{fileid} =~ /([^A-Za-z0-9\-_.])/) {
 	die("file identifier \"$image_data{fileid}\" contains unsafe character $1");

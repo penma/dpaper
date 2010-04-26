@@ -4,6 +4,10 @@ use strict;
 use warnings;
 use 5.010;
 
+use Readonly;
+
+Readonly::Scalar my $BS => 16;
+
 use MIME::Base64;
 use Number::Range;
 use PostScript::Simple;
@@ -30,33 +34,35 @@ sub writepage {
 	my $offset = $args{offset} // $self->{offset};
 	my $datalen = $args{length};
 
-	print "encoder: writepage $offset\n";
+	print STDERR "encoder: writepage $offset\n";
 
 	$self->{pss}->newpage();
 	$self->{pss}->setfont("OCRA", 4);
 
-	my ($data_line, $ps_line) = (0, 0);
+	my ($data_line, $ps_line, $ps_col) = (0, 0, 0);
 	my @lines_empty;
-	foreach my $chunk (unpack("(a30)*", $data)) {
-		if ($data_line >= 160) {
-			warn("Received 160x30 bytes of input data, this is more than will fit on the page");
+	foreach my $chunk (unpack("(a$BS)*", $data)) {
+		if ($data_line >= 320) {
+			warn("Received 320x$BS bytes of input data, this is more than will fit on the page");
 		}
 
 		# detect and record full-null blocks
-		if ($chunk eq "\0" x 30) {
+		if ($chunk eq "\0" x $BS) {
 			push(@lines_empty, $data_line);
 			next;
 		}
 
 		# generate barcode
-		my $code = sprintf("%02x:%s", $data_line, encode_base64($chunk, ""));
+		my $code = sprintf("%03x:%s", $data_line, encode_base64($chunk, ""));
+		$code =~ s/=+$//;
 
 		# include barcode in document
 		my $e = PostScript::Simple::EPS->new(source => code2eps(code128($code)));
-		$e->scale(18 / $e->width, 0.14 / $e->height);
-		$self->{pss}->importeps($e, 2, 2.8 + $ps_line / 6.2);
-		$self->{pss}->text(2 - 0.5, 2.8 - 0.02 + ($ps_line + 1) / 6.2, sprintf("%02x", $data_line));
-		$ps_line++;
+		$e->scale(8 / $e->width, 0.14 / $e->height);
+		$self->{pss}->importeps($e, 2 + $ps_col * 10, 2.8 + $ps_line / 6.2);
+		$self->{pss}->text(2 - 1 + $ps_col * 10, 2.8 - 0.02 + ($ps_line + 1) / 6.2, sprintf("%03x", $data_line));
+		$ps_col = ($ps_col + 1) % 2;
+		$ps_line++ if ($ps_col == 0);
 	} continue {
 		$data_line++;
 	}
