@@ -14,6 +14,7 @@ use Number::Range;
 use IO::File;
 use List::MoreUtils qw(uniq);
 use Image::Size;
+use File::Temp;
 
 sub read_image {
 	my %args = @_;
@@ -124,7 +125,22 @@ GetOptions(\%options,
 	"filename_prefix|filename-prefix=s",
 );
 
-my %image_data = try_read_image($ARGV[0]) or die("unable to get any usable data from $ARGV[0]");
+my $in_name;
+my $tempfile;
+if (!@ARGV) {
+	if (-t STDIN) {
+		die("No filename provided and STDIN is opened to a terminal.\nPlease provide a filename or image data");
+	} else {
+		$tempfile = File::Temp->new();
+		print $tempfile do { local $/; <STDIN>; };
+		close($tempfile);
+		$in_name = $tempfile->filename;
+	}
+} else {
+	$in_name = $ARGV[0];
+}
+
+my %image_data = try_read_image($in_name) or die("unable to get any usable data from $in_name");
 print STDERR "retrieved data from image!\n";
 
 if ($image_data{fileid} =~ /([^A-Za-z0-9\-_.])/) {
